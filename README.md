@@ -171,15 +171,28 @@ the Releases page. Pull requests build and upload an artifact but do not
 release. The build is stamped with the same version, so an installed copy
 reports which run produced it.
 
-### Installing a CI build
-
-A downloaded app is quarantined, and a quarantined app run from `~/Downloads`
-gets translocated to a random read-only path, which stops the widget
-registering:
+### Installing a release
 
 ```bash
-unzip ClaudeUsage.zip && xattr -dr com.apple.quarantine ClaudeUsage.app && mv ClaudeUsage.app /Applications/
+./Tools/install.sh
 ```
+
+`com.apple.quarantine` is set by whatever *downloads* a file, not by the app
+being unsigned. `gh` and `curl` do not set it; browsers do. So installing from
+the terminal sidesteps Gatekeeper entirely — the installer downloads with `gh`,
+swaps the bundle in `/Applications`, re-registers it with Launch Services and
+relaunches, and never needs `xattr`.
+
+If you download the zip in a browser you will get *"Apple could not verify
+ClaudeUsage is free of malware"* — choose **Done**, not *Move to Trash* — and
+you will need either `xattr -dr com.apple.quarantine ClaudeUsage.app` or
+**System Settings → Privacy & Security → Open Anyway**. Move it out of
+`~/Downloads` before launching, too: a quarantined app run from there is
+translocated to a random read-only path, which stops the widget registering.
+
+The only way to make a browser download open with no friction at all is to
+**notarize**, which needs a paid Apple Developer account and a Developer ID
+certificate. Nothing short of that satisfies Gatekeeper for a browser download.
 
 macOS runners bill at 10× minutes on private repos; free on public ones.
 
@@ -192,5 +205,5 @@ macOS runners bill at 10× minutes on private repos; free on public ones.
 | `Sources/ClaudeUsageCore/SharedStore.swift` | Snapshot transport between app and widget. |
 | `Sources/ClaudeUsageApp/` | Menu bar agent, refresh loop, settings. |
 | `Sources/ClaudeUsageWidget/` | Timeline provider and the small/medium/large views. |
-| `Tools/` | CLI harness, fixture, project generator. |
+| `Tools/` | CLI harness, fixture, installer, project generator. |
 | `Tools/icon/` | The app icon, drawn in CoreGraphics. |

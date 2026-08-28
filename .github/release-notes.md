@@ -3,27 +3,49 @@ and **week** limits — percentage used and reset time for each.
 
 ### Install
 
-The download is quarantined, and a quarantined app run from `~/Downloads` gets
-translocated to a random read-only path, which stops the widget registering. So
-unzip, clear the quarantine flag, and move it before launching:
+From a clone of the repo:
 
 ```bash
-unzip ClaudeUsage.zip
-xattr -dr com.apple.quarantine ClaudeUsage.app
-mv ClaudeUsage.app /Applications/
-open /Applications/ClaudeUsage.app
+./Tools/install.sh
 ```
 
-Then right-click the desktop → **Edit Widgets**, search "Claude Usage", and drag
-out the size you want.
+Or directly:
+
+```bash
+gh release download --repo ronyshohat/claude-usage --pattern 'ClaudeUsage.zip'
+ditto -xk ClaudeUsage.zip . && mv ClaudeUsage.app /Applications/ && open /Applications/ClaudeUsage.app
+```
+
+Downloading with `gh` (or `curl`) does **not** set `com.apple.quarantine`, so
+Gatekeeper has nothing to object to and there is no `xattr` step.
+
+<details>
+<summary>If you downloaded the zip in a browser instead</summary>
+
+Browsers do set the quarantine flag, and because this app is signed ad-hoc
+rather than notarized, macOS will refuse to open it — *"Apple could not verify
+ClaudeUsage is free of malware"*. Choose **Done**, never *Move to Trash*. Then
+either:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/ClaudeUsage.app
+mv ~/Downloads/ClaudeUsage.app /Applications/
+```
+
+or, without the terminal, open **System Settings → Privacy & Security** and
+click **Open Anyway**.
+
+Also move it out of `~/Downloads` before launching: a quarantined app run from
+there gets translocated to a random read-only path, which stops the widget
+registering.
+</details>
 
 ### Notes
 
-- Signed ad-hoc, so macOS will not recognise a developer. The `xattr` step above
-  is what gets it past Gatekeeper.
 - The widget only has data while the app is running — turn on **Launch at login**
   in the menu.
 - Numbers come from `claude -p "/usage"`, so the `claude` CLI must be installed
   and logged in. The call costs no tokens.
+- Refreshes every minute by default; change it in Settings.
 - On a fresh install the widget may briefly show *No usage data*: its container
   does not exist until the extension has run once. It clears on the next refresh.
