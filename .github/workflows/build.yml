@@ -16,7 +16,7 @@ jobs:
   core:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Parse a known usage report
         run: |
@@ -58,7 +58,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Show toolchain
         run: |
@@ -105,6 +105,15 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :NSExtension:NSExtensionPointIdentifier" \
             "$ext/Contents/Info.plist" | grep -qx "com.apple.widgetkit-extension" \
             || { echo "::error::wrong extension point identifier"; exit 1; }
+
+          stamped=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
+          expected="1.0.${{ github.run_number }}"
+          test "$stamped" = "$expected" \
+            || { echo "::error::version is $stamped, expected $expected"; exit 1; }
+          echo "version $stamped"
+
+          test -f "$app/Contents/Resources/AppIcon.icns" \
+            || { echo "::error::app icon missing from the bundle"; exit 1; }
 
           echo "--- widget entitlements ---"
           codesign -d --entitlements - --xml "$ext" 2>/dev/null | plutil -p - || true
