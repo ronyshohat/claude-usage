@@ -1,0 +1,93 @@
+# XcodeGen spec. Run Tools/generate-project.sh to turn this into ClaudeUsage.xcodeproj.
+#
+# Two targets share Sources/ClaudeUsageCore by compiling it into both. That is
+# simpler than a shared framework and the code is tiny.
+
+name: ClaudeUsage
+
+options:
+  bundleIdPrefix: com.claudeusage
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # App Groups are OFF by default. com.apple.security.application-groups is
+    # a restricted entitlement: it will not ad-hoc sign, and a free Apple ID
+    # cannot provision it. Empty means SharedStore skips that transport and uses
+    # the widget's own container, which needs no entitlement at all.
+    #
+    # With a paid team, set this to <TEAMID>.group.com.claudeusage.shared and
+    # add the application-groups entitlement back to the widget (and an
+    # entitlements file for the app).
+    APP_GROUP: ""
+    WIDGET_BUNDLE_ID: com.claudeusage.ClaudeUsage.Widget
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_EMIT_LOC_STRINGS: NO
+    # "Sign to Run Locally" — builds with no certificate and no team.
+    # Select your team in Signing & Capabilities if you have one.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: YES
+    CODE_SIGNING_ALLOWED: YES
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  ClaudeUsage:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/ClaudeUsageCore
+      - path: Sources/ClaudeUsageApp
+        excludes:
+          - "*.plist"
+          - "*.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: ClaudeUsage
+        PRODUCT_BUNDLE_IDENTIFIER: com.claudeusage.ClaudeUsage
+        INFOPLIST_FILE: Sources/ClaudeUsageApp/Info.plist
+        # No entitlements file: an unsandboxed app with no restricted
+        # entitlements signs cleanly with no certificate.
+        # Must stay off: the app reads ~/.claude/projects.
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - target: ClaudeUsageWidget
+        embed: true
+        codeSign: true
+
+  ClaudeUsageWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/ClaudeUsageCore
+      - path: Sources/ClaudeUsageWidget
+        excludes:
+          - "*.plist"
+          - "*.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: ClaudeUsageWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.claudeusage.ClaudeUsage.Widget
+        INFOPLIST_FILE: Sources/ClaudeUsageWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/ClaudeUsageWidget/ClaudeUsageWidget.entitlements
+        # macOS requires widget extensions to be sandboxed.
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+
+# Declared explicitly so both Xcode and `xcodebuild -scheme` agree on what
+# "build ClaudeUsage" means, rather than relying on autocreated schemes.
+schemes:
+  ClaudeUsage:
+    build:
+      targets:
+        ClaudeUsage: all
+    run:
+      config: Debug
+    archive:
+      config: Release

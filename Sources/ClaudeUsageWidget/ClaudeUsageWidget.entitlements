@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- macOS requires widget extensions to be sandboxed. This one is not a
+	     restricted entitlement, so it signs fine with "Sign to Run Locally".
+
+	     Deliberately no com.apple.security.application-groups here: that IS
+	     restricted, it needs a development certificate, and a free Apple ID
+	     cannot provision it at all. The app writes into this extension's own
+	     container instead — see SharedStore. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+</dict>
+</plist>

@@ -1,0 +1,139 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Compiles the scanner with the Command Line Tools and runs it against a
+  # fixture. Fast, and it covers the parsing rules that are easy to break.
+  core:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse a known usage report
+        run: |
+          set -euo pipefail
+          out=$(./Tools/verify.sh --parse Tools/fixtures/usage-output.txt)
+          echo "$out"
+
+          # The CLI's output is human-readable text, not an API, so this is the
+          # part most likely to break underneath us.
+          grep -qE "Session +48 " <<< "$out" || { echo "::error::session percent not parsed"; exit 1; }
+          grep -qE "Week +27 " <<< "$out" || { echo "::error::week percent not parsed"; exit 1; }
+          grep -qE 'label: +"week \(all models\)"' <<< "$out" || { echo "::error::label lost"; exit 1; }
+          # The exact line the widget renders under each gauge.
+          grep -qF 'widget: "resets 9:20pm · 1h' <<< "$out" \
+            || grep -qE 'widget: "resets 9:20pm · [0-9]+[hm]' <<< "$out" \
+            || { echo "::error::same-day reset should drop the date"; exit 1; }
+          grep -qE 'widget: "resets Aug 29, 5:00pm · ' <<< "$out" \
+            || { echo "::error::dated reset should keep the date"; exit 1; }
+          # Reset times come both with and without minutes.
+          grep -q "resets Aug 28 at 9:20pm" <<< "$out" || { echo "::error::h:mm reset lost"; exit 1; }
+          grep -q "resets Aug 29 at 5pm" <<< "$out" || { echo "::error::hour-only reset lost"; exit 1; }
+          # Both lines must carry a countdown, i.e. the reset text parsed to a
+          # real Date. Match the countdown shape, not a value: the fixture dates
+          # drift further out the longer this file lives.
+          countdowns=$(grep -cE 'resets .*\(([0-9]+h )?[0-9]+m\)' <<< "$out")
+          test "$countdowns" -ge 2 || { echo "::error::reset time did not parse to a date"; exit 1; }
+
+      - name: Reject unparseable output
+        run: |
+          set -euo pipefail
+          echo "some unrelated text" > "$RUNNER_TEMP/junk.txt"
+          if ./Tools/verify.sh --parse "$RUNNER_TEMP/junk.txt"; then
+            echo "::error::parser accepted garbage"; exit 1
+          fi
+          echo "correctly rejected"
+
+  app:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          ls /Applications | grep -i '^Xcode' || true
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      # Ad-hoc signed ("-"), because CI has no certificate. The App Group
+      # entitlement will not be granted, which is fine: SharedStore falls back
+      # to the widget's own sandbox container.
+      - name: Build
+        run: |
+          set -o pipefail
+          version="1.0.${{ github.run_number }}"
+          xcodebuild \
+            MARKETING_VERSION="$version" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            -project ClaudeUsage.xcodeproj \
+            -scheme ClaudeUsage \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build
+
+      - name: Check the bundle
+        run: |
+          set -euo pipefail
+          app=build/Build/Products/Release/ClaudeUsage.app
+          ext="$app/Contents/PlugIns/ClaudeUsageWidget.appex"
+
+          # Embedding is the step most likely to break silently, and a widget
+          # that is not embedded simply never appears in the gallery.
+          test -d "$ext" || { echo "::error::widget extension was not embedded"; exit 1; }
+
+          /usr/libexec/PlistBuddy -c "Print :NSExtension:NSExtensionPointIdentifier" \
+            "$ext/Contents/Info.plist" | grep -qx "com.apple.widgetkit-extension" \
+            || { echo "::error::wrong extension point identifier"; exit 1; }
+
+          echo "--- widget entitlements ---"
+          codesign -d --entitlements - --xml "$ext" 2>/dev/null | plutil -p - || true
+
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent \
+            build/Build/Products/Release/ClaudeUsage.app ClaudeUsage.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeUsage
+          path: ClaudeUsage.zip
+          if-no-files-found: error
+
+      # Every push to main publishes a downloadable build. Pull requests only
+      # get the artifact above.
+      - name: Publish release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v1.0.${{ github.run_number }}"
+          gh release create "$tag" ClaudeUsage.zip \
+            --title "$tag" \
+            --notes-file .github/release-notes.md \
+            --latest
+          echo "Released $tag" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "$tag" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
