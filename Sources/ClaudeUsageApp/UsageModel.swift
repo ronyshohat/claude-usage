@@ -13,9 +13,10 @@ final class UsageModel: ObservableObject {
     @Published private(set) var snapshot: UsageSnapshot?
     @Published private(set) var isRefreshing = false
 
-    /// The probe spawns the CLI and makes a network call, so this is minutes,
-    /// not seconds. The percentages move slowly enough that it does not matter.
-    @AppStorage("refreshSeconds") var refreshSeconds = 300 {
+    /// Each refresh spawns the CLI and makes a network call, so a minute is the
+    /// floor `restartTimer` enforces. It costs no tokens, but it is a process
+    /// launch and a round trip every time — raise it if that bothers you.
+    @AppStorage("refreshSeconds") var refreshSeconds = 60 {
         didSet { restartTimer() }
     }
 

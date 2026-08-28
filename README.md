@@ -57,10 +57,10 @@ provision it. See *Signing*.
 
 ### The probe cleans up after itself
 
-Every `claude -p` invocation writes a session transcript. At one probe every
-five minutes that would be ~300 files a day, so the probe runs with its working
-directory set to `~/Library/ClaudeUsageProbe` and deletes the transcripts that
-land in the matching `~/.claude/projects` folder. It only ever touches the
+Every `claude -p` invocation writes a session transcript. At the default
+one-minute refresh that would be ~1,400 files a day, so the probe runs with its
+working directory set to `~/Library/ClaudeUsageProbe` and deletes the
+transcripts that land in the matching `~/.claude/projects` folder. It only ever touches the
 folder its own scratch path maps to, so real project transcripts are never at
 risk.
 

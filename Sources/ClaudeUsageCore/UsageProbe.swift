@@ -97,8 +97,8 @@ public enum UsageProbe {
             .appendingPathComponent(encoded)
     }
 
-    /// Each probe writes a session transcript. Left alone that is ~300 files a
-    /// day, so clear the ones we caused.
+    /// Each probe writes a session transcript. At the default one-minute
+    /// interval that is ~1,400 files a day, so clear the ones we caused.
     static func pruneTranscripts() {
         let fm = FileManager.default
         let directory = transcriptDirectory
