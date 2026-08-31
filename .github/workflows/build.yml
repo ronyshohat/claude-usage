@@ -44,7 +44,7 @@ jobs:
           grep -q "resets Aug 29 at 5pm" <<< "$out" || { echo "::error::hour-only reset lost"; exit 1; }
           # Both lines must carry a countdown, i.e. the reset text parsed to a
           # real Date.
-          countdowns=$(grep -cE 'resets .*\(([0-9]+h )?[0-9]+m\)' <<< "$out")
+          countdowns=$(grep -cE 'resets .*\((([0-9]+d )?[0-9]+h )?[0-9]+m\)' <<< "$out")
           test "$countdowns" -ge 2 || { echo "::error::reset time did not parse to a date"; exit 1; }
 
       # A limit nothing has been spent against prints without its reset clause,
@@ -54,7 +54,8 @@ jobs:
         run: |
           set -euo pipefail
           for fixture in usage-output-zero usage-output-missing-session; do
-            out=$(./Tools/verify.sh --parse "Tools/fixtures/$fixture.txt")
+            out=$(TZ=UTC ./Tools/verify.sh --parse "Tools/fixtures/$fixture.txt" \
+              --now 2026-08-28T20:00:00Z)
             echo "$out"
             grep -qE "Session +0 " <<< "$out" \
               || { echo "::error::$fixture: session at zero was dropped"; exit 1; }
@@ -65,6 +66,10 @@ jobs:
             # Session stays above week even when it had to be filled in.
             head -1 <<< "$out" | grep -q "Session" \
               || { echo "::error::$fixture: gauges out of order"; exit 1; }
+            # Past a day the countdown carries days: the week is otherwise
+            # reported as a three-figure hour count.
+            grep -qF 'widget: "resets Sep 5, 4:59pm · 7d 20h 59m left"' <<< "$out" \
+              || { echo "::error::$fixture: countdown over a day lost its days"; exit 1; }
           done
 
       - name: Reject unparseable output

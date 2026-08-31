@@ -2,11 +2,16 @@ import Foundation
 
 public enum Format {
 
-    /// "2h 12m", or "12m" under an hour.
+    /// "1d 4h 10m" past a day, "2h 12m" past an hour, "12m" under one.
+    ///
+    /// The week runs to well over a hundred hours, which is a number nobody
+    /// reads as a length of time.
     public static func duration(_ interval: TimeInterval) -> String {
         let total = Int(max(0, interval))
-        let hours = total / 3600
+        let days = total / 86_400
+        let hours = (total % 86_400) / 3600
         let minutes = (total % 3600) / 60
+        if days > 0 { return "\(days)d \(hours)h \(minutes)m" }
         if hours > 0 { return "\(hours)h \(minutes)m" }
         return "\(minutes)m"
     }
