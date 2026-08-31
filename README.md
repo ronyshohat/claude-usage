@@ -211,11 +211,13 @@ TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
 
 CI signs ad-hoc, the same as a local build.
 
-**Every push to `main` publishes a release** tagged `v1.0.<run number>` with
-`ClaudeUsage.zip` attached, so there is always a current build to download from
-the Releases page. Pull requests build and upload an artifact but do not
-release. The build is stamped with the same version, and **Settings** in the
-menu shows it, so an installed copy says which run produced it.
+**Every push to `main` publishes a release** with `ClaudeUsage.zip` attached, so
+there is always a current build to download from the Releases page. Pull
+requests build and upload an artifact but do not release. The tag is one patch
+past the last release — `v1.0.4`, `v1.0.5`, `v1.0.6` — rather than the workflow
+run number, which pull request runs also consume and would leave gaps in. The
+build is stamped with the same version, and **Settings** in the menu shows it,
+so an installed copy says which release it came from.
 
 ### Installing a release
 

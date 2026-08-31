@@ -24,9 +24,9 @@ public enum Format {
 
     /// "1.0.42" from a release build, "1.0 (1)" from a local one.
     ///
-    /// CI stamps the marketing version as `1.0.<run number>` and the build as
-    /// the run number on its own, so spelling the build out again there would
-    /// only repeat the tail. A local build leaves the two unrelated, and then
+    /// CI stamps the marketing version as `1.0.<patch>` and the build as the
+    /// patch on its own, so spelling the build out again there would only
+    /// repeat the tail. A local build leaves the two unrelated, and then
     /// the build number is the half worth seeing.
     public static func version(short: String, build: String) -> String {
         if short.isEmpty { return build.isEmpty ? "unknown" : build }

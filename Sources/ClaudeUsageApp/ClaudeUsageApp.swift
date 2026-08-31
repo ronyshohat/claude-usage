@@ -126,8 +126,8 @@ struct MenuContent: View {
                     .truncationMode(.head)
             }
 
-            // Releases are tagged v1.0.<run number> and the bundle carries the
-            // same string, so this says which CI run the copy came from.
+            // Releases are tagged v1.0.<patch> and the bundle carries the
+            // same string, so this says which release the copy came from.
             Text("Version \(bundleVersion)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
