@@ -53,6 +53,25 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # The version is the next patch after the last release, not the workflow
+      # run number: pull requests share that counter but never publish, so run
+      # numbers leave gaps in the released versions.
+      - name: Work out the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""')
+          case "$last" in
+            v1.0.*) patch=$(( ${last#v1.0.} + 1 )) ;;
+            "")     patch=1 ;;
+            *)      echo "::error::cannot read a patch number out of $last"; exit 1 ;;
+          esac
+          echo "patch=$patch" >> "$GITHUB_OUTPUT"
+          echo "version=1.0.$patch" >> "$GITHUB_OUTPUT"
+          echo "last released: ${last:-none}, building 1.0.$patch"
+
       - name: Generate project
         run: xcodegen generate
 
@@ -62,10 +81,10 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          version="1.0.${{ github.run_number }}"
+          version="${{ steps.version.outputs.version }}"
           xcodebuild \
             MARKETING_VERSION="$version" \
-            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.patch }}" \
             -project ClaudeUsage.xcodeproj \
             -scheme ClaudeUsage \
             -configuration Release \
@@ -92,7 +111,7 @@ jobs:
             || { echo "::error::wrong extension point identifier"; exit 1; }
 
           stamped=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
-          expected="1.0.${{ github.run_number }}"
+          expected="${{ steps.version.outputs.version }}"
           test "$stamped" = "$expected" \
             || { echo "::error::version is $stamped, expected $expected"; exit 1; }
           echo "version $stamped"
@@ -124,7 +143,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v1.0.${{ github.run_number }}"
+          tag="v${{ steps.version.outputs.version }}"
           gh release create "$tag" ClaudeUsage.zip \
             --title "$tag" \
             --notes-file .github/release-notes.md \
