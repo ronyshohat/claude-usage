@@ -68,8 +68,8 @@ risk.
 
 - **The output format is human-readable text, not an API.** Parsing it is the
   fragile part of this project, so `UsageOutputParser` is lenient, treats "no
-  gauges found" as an error rather than zero, and is covered by CI against a
-  fixture holding both reset shapes (`9:20pm` and the hour-only `5pm`).
+  gauges found" as an error rather than zero, and is covered by tests against
+  fixtures holding both reset shapes (`9:20pm` and the hour-only `5pm`).
 - **A limit at zero comes back thin.** With nothing spent against it, `/usage`
   prints `Current session: 0% used` with no reset clause, and sometimes leaves
   the line out altogether. Both are read as a real zero: the gauge stays on the
@@ -131,6 +131,27 @@ That renders all ten `.iconset` sizes from `Tools/icon/makeicon.swift` and runs
 `iconutil` to produce `Sources/ClaudeUsageApp/Resources/AppIcon.icns`. The
 generated `.icns` is committed, so a normal build needs no extra step.
 
+## Tests
+
+`ClaudeUsageCore` has a test target that runs with the Command Line Tools — no
+Xcode, no project generation:
+
+```bash
+swift test
+```
+
+`Package.swift` exists only for this. It compiles `Sources/ClaudeUsageCore`
+where it already lives, so there is no second copy of the sources; the app and
+the widget are still built from `ClaudeUsage.xcodeproj` (see `project.yml`), and
+neither XcodeGen nor `xcodebuild` reads that file.
+
+The tests in `Tests/CoreTests` cover parsing a report, both reset formats, a
+limit at zero in both of the shapes it arrives in, the line the widget renders
+under each gauge, and the encoding the app and widget agree on. They read the
+same `Tools/fixtures/` transcripts the harness below parses, and they pin both
+the clock and the timezone in-process, so they give the same result whatever
+your machine is set to.
+
 ## Checking it without Xcode
 
 `Tools/verify.sh` builds `ClaudeUsageCore` with the Command Line Tools and runs
@@ -163,8 +184,8 @@ To exercise the parser without calling the CLI:
 (no line at all).
 
 A fixture carries dates but no year, so whether its reset reads as same-day or a
-year out depends on the day you run it. Add `--now` to pin the clock, which is
-what CI does:
+year out depends on the day you run it. Add `--now` to pin the clock, and set
+`TZ` so the printed times are reproducible:
 
 ```bash
 TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
@@ -175,12 +196,10 @@ TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
 
 `.github/workflows/build.yml` has two jobs:
 
-- **core** — compiles the parser with the Command Line Tools and runs it against
-  the fixtures, asserting both percentages, the label, both reset formats, and
-  that each reset parsed to a real date. It also checks that a limit at zero
-  survives in both of its shapes, and that unparseable input is rejected rather
-  than silently yielding nothing. It cannot run the live
-  probe: the runner has no `claude` and no credentials.
+- **core** — runs `swift test` (see [Tests](#tests)), then smoke-tests
+  `Tools/verify.sh` itself: it must parse a fixture and must still reject output
+  it cannot make sense of. Neither step can run the live probe — the runner has
+  no `claude` and no credentials.
 - **app** — `xcodegen` + `xcodebuild`, verifies the widget extension was
   actually embedded with the right extension point, and uploads `ClaudeUsage.zip`.
 
@@ -226,5 +245,7 @@ macOS runners bill at 10× minutes on private repos; free on public ones.
 | `Sources/ClaudeUsageCore/SharedStore.swift` | Snapshot transport between app and widget. |
 | `Sources/ClaudeUsageApp/` | Menu bar agent, refresh loop, settings. |
 | `Sources/ClaudeUsageWidget/` | Timeline provider and the small/medium/large views. |
+| `Tests/CoreTests/` | Parser, reset-line, formatting and snapshot tests. |
+| `Package.swift` | Test-only package, so `swift test` works without Xcode. |
 | `Tools/` | CLI harness, fixtures, installer, project generator. |
 | `Tools/icon/` | The app icon, drawn in CoreGraphics. |

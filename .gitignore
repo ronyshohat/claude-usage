@@ -3,3 +3,5 @@ build/
 DerivedData/
 *.xcodeproj
 *.xcworkspace
+.build/
+.swiftpm/
