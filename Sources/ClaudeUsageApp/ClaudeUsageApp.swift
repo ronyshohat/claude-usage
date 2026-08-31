@@ -125,7 +125,21 @@ struct MenuContent: View {
                     .lineLimit(1)
                     .truncationMode(.head)
             }
+
+            // Releases are tagged v1.0.<run number> and the bundle carries the
+            // same string, so this says which CI run the copy came from.
+            Text("Version \(bundleVersion)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
+    }
+
+    private var bundleVersion: String {
+        let info = Bundle.main.infoDictionary
+        return Format.version(
+            short: info?["CFBundleShortVersionString"] as? String ?? "",
+            build: info?["CFBundleVersion"] as? String ?? ""
+        )
     }
 }
 
