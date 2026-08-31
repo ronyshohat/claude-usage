@@ -11,70 +11,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Compiles the scanner with the Command Line Tools and runs it against a
-  # fixture. Fast, and it covers the parsing rules that are easy to break.
+  # Runs the ClaudeUsageCore tests with the Command Line Tools: no Xcode, no
+  # project generation. Fast, and it covers the parsing rules that are easy to
+  # break. Same command locally — see Tests/CoreTests.
   core:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
 
-      - name: Parse a known usage report
+      - name: Test ClaudeUsageCore
+        run: swift test
+
+      # The tests exercise the library directly, so nothing above would notice
+      # the harness itself breaking — and it is what the README tells people to
+      # run by hand. Check it parses a fixture and still rejects output it
+      # cannot make sense of, rather than reporting a confident pair of zeroes.
+      - name: Smoke-test the verify harness
         run: |
           set -euo pipefail
-          # Pinned clock and timezone: the fixture carries dates but no year,
-          # so whether "Aug 28" reads as same-day or a year out would otherwise
-          # depend on the day this runs.
-          out=$(TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
-            --now 2026-08-28T20:00:00Z)
-          echo "$out"
+          ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
+            --now 2026-08-28T20:00:00Z
 
-          # The CLI's output is human-readable text, not an API, so this is the
-          # part most likely to break underneath us.
-          grep -qE "Session +48 " <<< "$out" || { echo "::error::session percent not parsed"; exit 1; }
-          grep -qE "Week +27 " <<< "$out" || { echo "::error::week percent not parsed"; exit 1; }
-          grep -qE 'label: +"week \(all models\)"' <<< "$out" || { echo "::error::label lost"; exit 1; }
-          # The exact line the widget renders under each gauge.
-          grep -qF 'widget: "resets 9:20pm · 1h' <<< "$out" \
-            || grep -qE 'widget: "resets 9:20pm · [0-9]+[hm]' <<< "$out" \
-            || { echo "::error::same-day reset should drop the date"; exit 1; }
-          grep -qE 'widget: "resets Aug 29, 5:00pm · ' <<< "$out" \
-            || { echo "::error::dated reset should keep the date"; exit 1; }
-          # Reset times come both with and without minutes.
-          grep -q "resets Aug 28 at 9:20pm" <<< "$out" || { echo "::error::h:mm reset lost"; exit 1; }
-          grep -q "resets Aug 29 at 5pm" <<< "$out" || { echo "::error::hour-only reset lost"; exit 1; }
-          # Both lines must carry a countdown, i.e. the reset text parsed to a
-          # real Date.
-          countdowns=$(grep -cE 'resets .*\((([0-9]+d )?[0-9]+h )?[0-9]+m\)' <<< "$out")
-          test "$countdowns" -ge 2 || { echo "::error::reset time did not parse to a date"; exit 1; }
-
-      # A limit nothing has been spent against prints without its reset clause,
-      # and is sometimes left out of the report entirely. Both shapes are a real
-      # zero, not a missing gauge — the case that regressed once already.
-      - name: Parse a report with a limit at zero
-        run: |
-          set -euo pipefail
-          for fixture in usage-output-zero usage-output-missing-session; do
-            out=$(TZ=UTC ./Tools/verify.sh --parse "Tools/fixtures/$fixture.txt" \
-              --now 2026-08-28T20:00:00Z)
-            echo "$out"
-            grep -qE "Session +0 " <<< "$out" \
-              || { echo "::error::$fixture: session at zero was dropped"; exit 1; }
-            grep -qE "Week +4 " <<< "$out" \
-              || { echo "::error::$fixture: week percent not parsed"; exit 1; }
-            grep -qF 'widget: "nothing used yet"' <<< "$out" \
-              || { echo "::error::$fixture: zero gauge has no reset line"; exit 1; }
-            # Session stays above week even when it had to be filled in.
-            head -1 <<< "$out" | grep -q "Session" \
-              || { echo "::error::$fixture: gauges out of order"; exit 1; }
-            # Past a day the countdown carries days: the week is otherwise
-            # reported as a three-figure hour count.
-            grep -qF 'widget: "resets Sep 5, 4:59pm · 7d 20h 59m left"' <<< "$out" \
-              || { echo "::error::$fixture: countdown over a day lost its days"; exit 1; }
-          done
-
-      - name: Reject unparseable output
-        run: |
-          set -euo pipefail
           echo "some unrelated text" > "$RUNNER_TEMP/junk.txt"
           if ./Tools/verify.sh --parse "$RUNNER_TEMP/junk.txt"; then
             echo "::error::parser accepted garbage"; exit 1
