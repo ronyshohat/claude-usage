@@ -125,6 +125,9 @@ and your `DEVELOPMENT_TEAM`. A free Apple ID will not work for this.
 
 ## The icon
 
+<img src="docs/icon.png" width="128"
+     alt="The app icon: two nested white gauge arcs on a clay-orange rounded square">
+
 Two nested gauge arcs on clay — the widget's own idea at app-icon scale. It is
 drawn in CoreGraphics rather than checked in as an opaque binary, so it can be
 edited:
@@ -133,9 +136,10 @@ edited:
 ./Tools/icon/build-icon.sh
 ```
 
-That renders all ten `.iconset` sizes from `Tools/icon/makeicon.swift` and runs
-`iconutil` to produce `Sources/ClaudeUsageApp/Resources/AppIcon.icns`. The
-generated `.icns` is committed, so a normal build needs no extra step.
+That renders all ten `.iconset` sizes from `Tools/icon/makeicon.swift`, runs
+`iconutil` to produce `Sources/ClaudeUsageApp/Resources/AppIcon.icns`, and copies
+the 512px render to `docs/icon.png` for the image above. Both are committed, so a
+normal build needs no extra step.
 
 ## Tests
 
