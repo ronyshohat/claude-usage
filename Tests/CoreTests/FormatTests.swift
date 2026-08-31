@@ -39,4 +39,26 @@ struct FormatTests {
         #expect(LimitGauge(label: "week (all models)", percent: 0, resetsText: "").shortLabel == "Week")
         #expect(LimitGauge(label: "session", percent: 0, resetsText: "").shortLabel == "Session")
     }
+
+    @Test("A release version already carries its build, so it is not repeated")
+    func versionDropsARedundantBuild() {
+        #expect(Format.version(short: "1.0.42", build: "42") == "1.0.42")
+        #expect(Format.version(short: "42", build: "42") == "42")
+    }
+
+    @Test("A local build shows the build number, which the version does not")
+    func versionKeepsAnInformativeBuild() {
+        #expect(Format.version(short: "1.0", build: "1") == "1.0 (1)")
+        #expect(Format.version(short: "1.0.42", build: "7") == "1.0.42 (7)")
+        // "1.0.4" ends in "4", but the build is 2 — a suffix match has to be
+        // on the whole dot-separated component or it eats real information.
+        #expect(Format.version(short: "1.0.42", build: "2") == "1.0.42 (2)")
+    }
+
+    @Test("A bundle missing either key still reads as something")
+    func versionSurvivesAnEmptyBundle() {
+        #expect(Format.version(short: "1.0", build: "") == "1.0")
+        #expect(Format.version(short: "", build: "42") == "42")
+        #expect(Format.version(short: "", build: "") == "unknown")
+    }
 }

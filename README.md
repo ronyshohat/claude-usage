@@ -3,6 +3,12 @@
 A macOS Notification Center widget showing your **current session** and
 **current week** limits — percentage used and reset time for each.
 
+<img src="docs/menu-bar.png" width="420"
+     alt="The menu bar item open, showing a session gauge at 28% and a week gauge at 7%, each with its reset time and time remaining">
+
+The menu bar carries the same two numbers and is where the app is driven from:
+refresh, settings, quit. On the desktop the widget shows them side by side:
+
 ```
 SESSION                 53%          WEEK                    27%
 ██████████████░░░░░░░░░░             ██████░░░░░░░░░░░░░░░░░░
@@ -208,8 +214,8 @@ CI signs ad-hoc, the same as a local build.
 **Every push to `main` publishes a release** tagged `v1.0.<run number>` with
 `ClaudeUsage.zip` attached, so there is always a current build to download from
 the Releases page. Pull requests build and upload an artifact but do not
-release. The build is stamped with the same version, so an installed copy
-reports which run produced it.
+release. The build is stamped with the same version, and **Settings** in the
+menu shows it, so an installed copy says which run produced it.
 
 ### Installing a release
 
