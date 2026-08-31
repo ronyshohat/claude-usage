@@ -62,6 +62,7 @@ struct MenuContent: View {
             }
         }
         .padding(14)
+        .background(WindowAnchor())
     }
 
     private var header: some View {
@@ -140,6 +141,69 @@ struct MenuContent: View {
             short: info?["CFBundleShortVersionString"] as? String ?? "",
             build: info?["CFBundleVersion"] as? String ?? ""
         )
+    }
+}
+
+/// Holds the panel's top edge where it opened.
+///
+/// SwiftUI re-anchors a `.window` MenuBarExtra to its status item every time
+/// the content resizes. When the menu bar has auto-hidden by then — the system
+/// setting, or anything running full screen — the status item is off-screen
+/// above, so the panel jumps to the top of the display. Opening Settings is
+/// the quickest way to see it. An app cannot hold the menu bar open, so pin
+/// the panel instead: remember the top edge from when it opened, and never let
+/// a resize pull it higher.
+private struct WindowAnchor: NSViewRepresentable {
+    func makeNSView(context: Context) -> AnchorView { AnchorView() }
+    func updateNSView(_ view: AnchorView, context: Context) {}
+}
+
+private final class AnchorView: NSView {
+    private var pinnedTop: CGFloat?
+    private var observers: [NSObjectProtocol] = []
+
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        guard let window else { return }
+
+        pin()
+        let center = NotificationCenter.default
+        observers = [
+            // The bar is on screen the moment the status item is clicked, so a
+            // panel that has just taken key is one measuring against the bar.
+            center.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.pin() },
+            center.addObserver(
+                forName: NSWindow.didResizeNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.reanchor() },
+            center.addObserver(
+                forName: NSWindow.didMoveNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.reanchor() },
+        ]
+    }
+
+    private func pin() {
+        guard let window else { return }
+        pinnedTop = min(window.frame.maxY, menuBarBottom(of: window.screen))
+    }
+
+    /// Only ever pushes the panel back down: a taller panel growing downwards
+    /// is left alone, and so is anything macOS does to keep it on screen.
+    private func reanchor() {
+        guard let window, let pinnedTop, window.frame.maxY > pinnedTop + 0.5 else { return }
+        window.setFrameOrigin(NSPoint(x: window.frame.minX, y: pinnedTop - window.frame.height))
+    }
+
+    /// Where the panel sits with the bar showing — the fallback for a panel
+    /// that somehow opens with the bar already gone.
+    private func menuBarBottom(of screen: NSScreen?) -> CGFloat {
+        guard let screen = screen ?? NSScreen.main else { return .greatestFiniteMagnitude }
+        return screen.frame.maxY - NSStatusBar.system.thickness
     }
 }
 
