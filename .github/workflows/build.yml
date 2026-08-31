@@ -21,7 +21,11 @@ jobs:
       - name: Parse a known usage report
         run: |
           set -euo pipefail
-          out=$(./Tools/verify.sh --parse Tools/fixtures/usage-output.txt)
+          # Pinned clock and timezone: the fixture carries dates but no year,
+          # so whether "Aug 28" reads as same-day or a year out would otherwise
+          # depend on the day this runs.
+          out=$(TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
+            --now 2026-08-28T20:00:00Z)
           echo "$out"
 
           # The CLI's output is human-readable text, not an API, so this is the
@@ -39,10 +43,29 @@ jobs:
           grep -q "resets Aug 28 at 9:20pm" <<< "$out" || { echo "::error::h:mm reset lost"; exit 1; }
           grep -q "resets Aug 29 at 5pm" <<< "$out" || { echo "::error::hour-only reset lost"; exit 1; }
           # Both lines must carry a countdown, i.e. the reset text parsed to a
-          # real Date. Match the countdown shape, not a value: the fixture dates
-          # drift further out the longer this file lives.
+          # real Date.
           countdowns=$(grep -cE 'resets .*\(([0-9]+h )?[0-9]+m\)' <<< "$out")
           test "$countdowns" -ge 2 || { echo "::error::reset time did not parse to a date"; exit 1; }
+
+      # A limit nothing has been spent against prints without its reset clause,
+      # and is sometimes left out of the report entirely. Both shapes are a real
+      # zero, not a missing gauge — the case that regressed once already.
+      - name: Parse a report with a limit at zero
+        run: |
+          set -euo pipefail
+          for fixture in usage-output-zero usage-output-missing-session; do
+            out=$(./Tools/verify.sh --parse "Tools/fixtures/$fixture.txt")
+            echo "$out"
+            grep -qE "Session +0 " <<< "$out" \
+              || { echo "::error::$fixture: session at zero was dropped"; exit 1; }
+            grep -qE "Week +4 " <<< "$out" \
+              || { echo "::error::$fixture: week percent not parsed"; exit 1; }
+            grep -qF 'widget: "nothing used yet"' <<< "$out" \
+              || { echo "::error::$fixture: zero gauge has no reset line"; exit 1; }
+            # Session stays above week even when it had to be filled in.
+            head -1 <<< "$out" | grep -q "Session" \
+              || { echo "::error::$fixture: gauges out of order"; exit 1; }
+          done
 
       - name: Reject unparseable output
         run: |

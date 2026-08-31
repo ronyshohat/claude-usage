@@ -6,6 +6,8 @@ public struct LimitGauge: Codable, Sendable, Equatable, Identifiable {
     public var label: String
     public var percent: Int
     /// Verbatim from the CLI, e.g. "Aug 28 at 9:20pm". Already in local time.
+    /// Empty when the limit came back without a reset, which is what a window
+    /// nothing has been spent against looks like.
     public var resetsText: String
     /// Best-effort parse of `resetsText`, for the countdown. Nil is fine — the
     /// text is what gets displayed either way.
@@ -27,6 +29,9 @@ public struct LimitGauge: Codable, Sendable, Equatable, Identifiable {
     }
 
     public var fraction: Double { min(1, max(0, Double(percent) / 100)) }
+
+    /// False when the CLI reported this limit without a reset time.
+    public var hasReset: Bool { !resetsText.isEmpty }
 
     public func remaining(at now: Date = Date()) -> TimeInterval? {
         guard let resetsAt else { return nil }
@@ -64,6 +69,13 @@ public struct LimitGauge: Codable, Sendable, Equatable, Identifiable {
     /// countdown is more text than the width allows, and scaling it down to fit
     /// just makes it unreadable.
     public func resetLine(at now: Date = Date(), includeCountdown: Bool = true) -> String {
+        // No reset clause means no window has opened yet, which is only ever
+        // true at zero. A percentage without one would be the CLI changing
+        // shape, so say that rather than inventing a time.
+        guard hasReset else {
+            return percent == 0 ? "nothing used yet" : "reset time unavailable"
+        }
+
         let base = "resets \(resetDisplay(at: now))"
         guard includeCountdown, let remaining = remaining(at: now) else { return base }
         return "\(base) · \(Format.duration(remaining)) left"

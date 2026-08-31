@@ -70,6 +70,13 @@ risk.
   fragile part of this project, so `UsageOutputParser` is lenient, treats "no
   gauges found" as an error rather than zero, and is covered by CI against a
   fixture holding both reset shapes (`9:20pm` and the hour-only `5pm`).
+- **A limit at zero comes back thin.** With nothing spent against it, `/usage`
+  prints `Current session: 0% used` with no reset clause, and sometimes leaves
+  the line out altogether. Both are read as a real zero: the gauge stays on the
+  widget at 0% with "nothing used yet" where the reset would be. A limit is only
+  filled in this way when the rest of the report parsed, so a login prompt or a
+  changed format still surfaces as an error rather than a confident pair of
+  zeroes.
 - **No network** means the fetch fails. The widget keeps showing the last known
   values with a warning badge rather than presenting them as current, and shows
   a clock badge if the app has been quiet for over 30 minutes.
@@ -151,14 +158,28 @@ To exercise the parser without calling the CLI:
 ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt
 ```
 
+`Tools/fixtures/` also holds the shapes a limit at zero arrives in:
+`usage-output-zero.txt` (no reset clause) and `usage-output-missing-session.txt`
+(no line at all).
+
+A fixture carries dates but no year, so whether its reset reads as same-day or a
+year out depends on the day you run it. Add `--now` to pin the clock, which is
+what CI does:
+
+```bash
+TZ=UTC ./Tools/verify.sh --parse Tools/fixtures/usage-output.txt \
+  --now 2026-08-28T20:00:00Z
+```
+
 ## Building in CI
 
 `.github/workflows/build.yml` has two jobs:
 
 - **core** — compiles the parser with the Command Line Tools and runs it against
-  the fixture, asserting both percentages, the label, both reset formats, and
-  that each reset parsed to a real date. It also checks that unparseable input
-  is rejected rather than silently yielding nothing. It cannot run the live
+  the fixtures, asserting both percentages, the label, both reset formats, and
+  that each reset parsed to a real date. It also checks that a limit at zero
+  survives in both of its shapes, and that unparseable input is rejected rather
+  than silently yielding nothing. It cannot run the live
   probe: the runner has no `claude` and no credentials.
 - **app** — `xcodegen` + `xcodebuild`, verifies the widget extension was
   actually embedded with the right extension point, and uploads `ClaudeUsage.zip`.
@@ -205,5 +226,5 @@ macOS runners bill at 10× minutes on private repos; free on public ones.
 | `Sources/ClaudeUsageCore/SharedStore.swift` | Snapshot transport between app and widget. |
 | `Sources/ClaudeUsageApp/` | Menu bar agent, refresh loop, settings. |
 | `Sources/ClaudeUsageWidget/` | Timeline provider and the small/medium/large views. |
-| `Tools/` | CLI harness, fixture, installer, project generator. |
+| `Tools/` | CLI harness, fixtures, installer, project generator. |
 | `Tools/icon/` | The app icon, drawn in CoreGraphics. |

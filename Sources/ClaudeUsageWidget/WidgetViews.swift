@@ -55,9 +55,13 @@ struct GaugeBlock: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
-                    Capsule()
-                        .fill(tint)
-                        .frame(width: max(geo.size.width * gauge.fraction, 3))
+                    // The 3pt floor keeps 1% visible; a true zero gets an empty
+                    // track rather than a sliver that reads as "some".
+                    if gauge.percent > 0 {
+                        Capsule()
+                            .fill(tint)
+                            .frame(width: max(geo.size.width * gauge.fraction, 3))
+                    }
                 }
             }
             .frame(height: metrics.bar)
