@@ -138,8 +138,13 @@ edited:
 
 That renders all ten `.iconset` sizes from `Tools/icon/makeicon.swift`, runs
 `iconutil` to produce `Sources/ClaudeUsageApp/Resources/AppIcon.icns`, and copies
-the 512px render to `docs/icon.png` for the image above. Both are committed, so a
-normal build needs no extra step.
+the 512px render to `docs/icon.png` for the image above. All of it is committed,
+so a normal build needs no extra step.
+
+It also writes `docs/social-preview.png`: the same mark, set beside the name on
+the same clay at 1280×640, which is the size GitHub renders a repository's
+social preview best at. That one is not referenced from any page — upload it
+under **Settings → General → Social preview** when it changes.
 
 ## Tests
 
@@ -260,4 +265,4 @@ macOS runners bill at 10× minutes on private repos; free on public ones.
 | `Tests/CoreTests/` | Parser, reset-line, formatting and snapshot tests. |
 | `Package.swift` | Test-only package, so `swift test` works without Xcode. |
 | `Tools/` | CLI harness, fixtures, installer, project generator. |
-| `Tools/icon/` | The app icon, drawn in CoreGraphics. |
+| `Tools/icon/` | The app icon and social card, drawn in CoreGraphics. |

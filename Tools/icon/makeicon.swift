@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import CoreText
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -31,14 +33,18 @@ enum Icon {
         ctx.setFillColor(background)
         ctx.fillPath()
 
-        let center = CGPoint(x: rect.midX, y: rect.midY)
+        mark(ctx, center: CGPoint(x: rect.midX, y: rect.midY), scale: rect.width)
+    }
 
+    /// The two arcs alone, sized to `scale` — the width of the shape they sit in.
+    /// Shared with the social card so both come from one description of the mark.
+    static func mark(_ ctx: CGContext, center: CGPoint, scale: CGFloat) {
         // Session: 70% of the way round, starting at twelve o'clock.
         arc(
             ctx,
             center: center,
-            radius: rect.width * 0.295,
-            width: rect.width * 0.115,
+            radius: scale * 0.295,
+            width: scale * 0.115,
             sweep: 0.70,
             color: sessionArc
         )
@@ -47,8 +53,8 @@ enum Icon {
         arc(
             ctx,
             center: center,
-            radius: rect.width * 0.155,
-            width: rect.width * 0.082,
+            radius: scale * 0.155,
+            width: scale * 0.082,
             sweep: 0.30,
             color: weekArc
         )
@@ -106,6 +112,88 @@ enum Icon {
     }
 }
 
+/// Draws the repository's social preview card.
+///
+/// GitHub wants at least 640x320 and renders best at 1280x640, and it crops the
+/// card to other ratios in some places, so everything sits well inside the edges.
+enum Social {
+
+    static let width = 1280
+    static let height = 640
+
+    static func render() -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.setAllowsAntialiasing(true)
+        ctx.setFillColor(Icon.background)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        let title = line("Claude Usage", size: 92, weight: .semibold, color: Icon.sessionArc)
+        let subtitle = line(
+            "Session and week limits, in the menu bar",
+            size: 38,
+            weight: .regular,
+            color: Icon.weekArc
+        )
+
+        // Centre the mark and the text as one group, measuring the type rather
+        // than positioning it by hand, so editing the wording keeps the margins.
+        let markScale: CGFloat = 400
+        let markRadius = markScale * (0.295 + 0.115 / 2)  // outer arc plus half its stroke
+        let gap: CGFloat = 76
+        let text = max(width(of: title), width(of: subtitle))
+        let left = (CGFloat(width) - (markRadius * 2 + gap + text)) / 2
+
+        let middle = CGFloat(height) / 2
+
+        // The mark full-bleed on the clay rather than the icon's rounded square:
+        // the card is already a rectangle, and a tile inside it reads as a mistake.
+        Icon.mark(ctx, center: CGPoint(x: left + markRadius, y: middle), scale: markScale)
+
+        // Baselines chosen so the two lines straddle the mark's centre.
+        let textLeft = left + markRadius * 2 + gap
+        draw(title, at: CGPoint(x: textLeft, y: middle + 9), in: ctx)
+        draw(subtitle, at: CGPoint(x: textLeft, y: middle - 67), in: ctx)
+
+        return ctx.makeImage()
+    }
+
+    /// The system font by weight, so no PostScript name has to be guessed.
+    private static func line(
+        _ text: String,
+        size: CGFloat,
+        weight: NSFont.Weight,
+        color: CGColor
+    ) -> CTLine {
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String):
+                    NSFont.systemFont(ofSize: size, weight: weight),
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+            ]
+        )
+        return CTLineCreateWithAttributedString(attributed)
+    }
+
+    private static func width(of line: CTLine) -> CGFloat {
+        CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+    }
+
+    private static func draw(_ line: CTLine, at origin: CGPoint, in ctx: CGContext) {
+        ctx.textPosition = origin
+        CTLineDraw(line, ctx)
+    }
+}
+
 @main
 struct Main {
     /// The sizes `iconutil` expects in an .iconset.
@@ -118,7 +206,8 @@ struct Main {
     ]
 
     static func main() throws {
-        let out = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "AppIcon.iconset")
+        let args = CommandLine.arguments.dropFirst()
+        let out = URL(fileURLWithPath: args.first ?? "AppIcon.iconset")
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
         for variant in variants {
@@ -129,5 +218,15 @@ struct Main {
             try Icon.write(image, to: out.appendingPathComponent("\(variant.name).png"))
         }
         print("wrote \(variants.count) images to \(out.path)")
+
+        // Second argument, if given, is where the social preview card goes.
+        guard let path = args.dropFirst().first else { return }
+        guard let card = Social.render() else {
+            FileHandle.standardError.write("could not render the social card\n".data(using: .utf8)!)
+            exit(1)
+        }
+        let cardURL = URL(fileURLWithPath: path)
+        try Icon.write(card, to: cardURL)
+        print("wrote \(Social.width)x\(Social.height) card to \(cardURL.path)")
     }
 }
