@@ -19,11 +19,18 @@ struct FormatTests {
         #expect(Format.duration(0) == "0m")
     }
 
-    @Test("Freshness is rounded off under a minute")
-    func relativeSaysJustNow() {
-        #expect(Format.relative(pinnedNow, to: pinnedNow) == "just now")
-        #expect(Format.relative(pinnedNow.addingTimeInterval(-30), to: pinnedNow) == "just now")
+    @Test("Freshness counts in seconds under a minute")
+    func relativeCountsSeconds() {
+        #expect(Format.relative(pinnedNow, to: pinnedNow) == "0s ago")
+        #expect(Format.relative(pinnedNow.addingTimeInterval(-47), to: pinnedNow) == "47s ago")
+        #expect(Format.relative(pinnedNow.addingTimeInterval(-59), to: pinnedNow) == "59s ago")
+        #expect(Format.relative(pinnedNow.addingTimeInterval(-60), to: pinnedNow) == "1m ago")
         #expect(Format.relative(pinnedNow.addingTimeInterval(-300), to: pinnedNow) == "5m ago")
+    }
+
+    @Test("A snapshot stamped in the future reads as zero, not as a negative")
+    func relativeClampsAtZero() {
+        #expect(Format.relative(pinnedNow.addingTimeInterval(30), to: pinnedNow) == "0s ago")
     }
 
     @Test("The bar never overfills, whatever the CLI reports")
