@@ -16,9 +16,14 @@ public enum Format {
         return "\(minutes)m"
     }
 
+    /// "47s ago" under a minute, then the same units as `duration`.
+    ///
+    /// Seconds, not a "just now" band: the refresh interval goes as low as a
+    /// minute, so anything that rounded the first minute off would spend most
+    /// of its life unable to say anything else.
     public static func relative(_ date: Date, to now: Date = Date()) -> String {
-        let delta = now.timeIntervalSince(date)
-        if delta < 60 { return "just now" }
+        let delta = max(0, now.timeIntervalSince(date))
+        if delta < 60 { return "\(Int(delta))s ago" }
         return duration(delta) + " ago"
     }
 

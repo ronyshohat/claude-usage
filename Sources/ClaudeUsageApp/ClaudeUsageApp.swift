@@ -72,9 +72,16 @@ struct MenuContent: View {
             if model.isRefreshing {
                 ProgressView().controlSize(.small)
             } else if let generated = model.snapshot?.generatedAt {
-                Text(Format.relative(generated))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                // Against a plain `Date()` the age is fixed at the moment the
+                // body runs, and the body runs when the snapshot arrives — so
+                // it read "0s ago" forever, whatever the refresh interval. The
+                // timeline redraws the line against a clock that moves.
+                TimelineView(.periodic(from: generated, by: 1)) { context in
+                    Text(Format.relative(generated, to: context.date))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
             }
         }
     }
