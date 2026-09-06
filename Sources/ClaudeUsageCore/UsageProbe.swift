@@ -43,20 +43,32 @@ public enum UsageProbe {
     ]
 
     public static func locateCLI() -> URL? {
+        // Debug, not info: the settings pane re-resolves this on every
+        // keystroke, and `run` logs the path it settled on once per cycle.
         let fm = FileManager.default
 
         if let overridePath, !overridePath.isEmpty {
             let url = URL(fileURLWithPath: (overridePath as NSString).expandingTildeInPath)
-            if fm.isExecutableFile(atPath: url.path) { return url }
+            if fm.isExecutableFile(atPath: url.path) {
+                Log.debug("probe", "cli from the configured override: \(url.path)")
+                return url
+            }
+            Log.debug("probe", "override \(url.path) is not executable, falling through")
         }
 
         for candidate in candidates {
             let path = (candidate as NSString).expandingTildeInPath
-            if fm.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+            if fm.isExecutableFile(atPath: path) {
+                Log.debug("probe", "cli found at \(path)")
+                return URL(fileURLWithPath: path)
+            }
         }
 
         // A GUI app inherits a bare PATH, so ask a login shell as a last resort.
-        return askLoginShell()
+        Log.debug("probe", "no candidate path matched, asking a login shell")
+        let found = askLoginShell()
+        Log.debug("probe", "login shell returned \(found?.path ?? "nothing")")
+        return found
     }
 
     private static func askLoginShell() -> URL? {
@@ -105,22 +117,45 @@ public enum UsageProbe {
 
         // Only ever touch the folder our own scratch path maps to.
         let expected = scratchDirectory.path.replacingOccurrences(of: "/", with: "-")
-        guard directory.lastPathComponent == expected,
-              let contents = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        else { return }
+        guard directory.lastPathComponent == expected else {
+            Log.warn("probe", "not pruning \(directory.path): it is not the folder our scratch"
+                + " path maps to (expected \(expected))")
+            return
+        }
+        guard let contents = try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil
+        ) else {
+            Log.debug("probe", "no transcript folder at \(directory.path) yet")
+            return
+        }
 
+        var removed = 0
+        var failed = 0
         for file in contents where file.pathExtension == "jsonl" {
-            try? fm.removeItem(at: file)
+            if (try? fm.removeItem(at: file)) != nil { removed += 1 } else { failed += 1 }
+        }
+        // A folder that keeps growing means the probe is leaving a transcript a
+        // day per minute of uptime behind it, which is worth seeing.
+        if removed > 0 || failed > 0 {
+            Log.debug("probe", "pruned \(removed) probe transcript(s), \(failed) would not delete")
         }
     }
 
     // MARK: - Running
 
     public static func run(timeout: TimeInterval = 30) -> Result<[LimitGauge], ProbeError> {
-        guard let cli = locateCLI() else { return .failure(.cliNotFound) }
+        guard let cli = locateCLI() else {
+            Log.error("probe", "claude CLI not found. override=\(overridePath ?? "none");"
+                + " tried \(candidates.joined(separator: ", ")) and a login shell")
+            return .failure(.cliNotFound)
+        }
 
         let fm = FileManager.default
         try? fm.createDirectory(at: scratchDirectory, withIntermediateDirectories: true)
+
+        let started = Date()
+        Log.info("probe", "running \(cli.path) -p \"/usage\" in \(scratchDirectory.path),"
+            + " timeout \(Int(timeout))s")
 
         let process = Process()
         process.executableURL = cli
@@ -147,6 +182,7 @@ public enum UsageProbe {
         do {
             try process.run()
         } catch {
+            Log.error("probe", "could not launch \(cli.path): \(error.localizedDescription)")
             return .failure(.failed(status: -1, message: error.localizedDescription))
         }
 
@@ -169,20 +205,45 @@ public enum UsageProbe {
         process.waitUntilExit()
         watchdog.cancel()
         let timedOut = expired.tripped
+        let took = Format.elapsed(Date().timeIntervalSince(started))
 
         defer { pruneTranscripts() }
 
-        if timedOut { return .failure(.timedOut) }
+        if timedOut {
+            Log.error("probe", "timed out after \(Int(timeout))s and was terminated."
+                + " The panel will keep the last good numbers")
+            return .failure(.timedOut)
+        }
 
         let output = String(decoding: outData, as: UTF8.self)
+        let errorText = String(decoding: errData, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // The report carries live request counts, so the digest changes on
+        // nearly every honest call. It earns its place by the case where it
+        // does not: identical bytes mean a cached answer.
+        Log.info("probe", "exit \(process.terminationStatus) in \(took),"
+            + " stdout \(outData.count)B digest \(Log.digest(output)),"
+            + " stderr \(errData.count)B")
+        Log.debug("probe", "stdout:\n\(output)")
+        if !errorText.isEmpty { Log.debug("probe", "stderr:\n\(errorText)") }
+
         guard process.terminationStatus == 0 else {
-            let message = String(decoding: errData, as: UTF8.self)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return .failure(.failed(status: process.terminationStatus, message: message))
+            Log.error("probe", "claude exited \(process.terminationStatus):"
+                + " \(errorText.isEmpty ? "(nothing on stderr)" : errorText)")
+            return .failure(.failed(status: process.terminationStatus, message: errorText))
         }
 
         let gauges = UsageOutputParser.parse(output)
-        guard !gauges.isEmpty else { return .failure(.unrecognizedOutput(output)) }
+        guard !gauges.isEmpty else {
+            // Logged in full regardless of level: this is the format having
+            // changed, or a login prompt, and the output is the whole evidence.
+            Log.error("probe", "nothing recognisable in \(outData.count)B of output"
+                + " — the report format may have changed. Raw output:\n\(output)")
+            return .failure(.unrecognizedOutput(output))
+        }
+
+        Log.info("probe", "parsed \(gauges.count) gauge(s) in \(took): \(gauges.logSummary)")
         return .success(gauges)
     }
 
@@ -193,8 +254,20 @@ public enum UsageProbe {
         case let .success(gauges):
             return UsageSnapshot(gauges: gauges)
         case let .failure(error):
-            var snapshot = SharedStore.read() ?? UsageSnapshot()
+            let stored = SharedStore.read()
+            var snapshot = stored ?? UsageSnapshot()
             snapshot.failure = error.localizedDescription
+            if let stored {
+                // The one case where a fresh-looking panel is showing old
+                // numbers on purpose — say how old, in the log as well as
+                // in the warning badge.
+                Log.warn("probe", "probe failed (\(error.localizedDescription)); keeping the"
+                    + " snapshot stored \(Format.relative(stored.generatedAt)):"
+                    + " \(stored.logSummary)")
+            } else {
+                Log.warn("probe", "probe failed (\(error.localizedDescription)) with no stored"
+                    + " snapshot to fall back on")
+            }
             return snapshot
         }
     }

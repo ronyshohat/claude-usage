@@ -92,6 +92,97 @@ risk.
 - **`/usage` percentages are account-wide**, but the contribution breakdown the
   CLI prints below them is local-only. This widget shows the percentages, which
   do include your other devices.
+- **Numbers that look stuck** are the hard one, because a successful refresh
+  always stamps a fresh timestamp whether or not anything behind it moved. That
+  is what the [log](#logs) is for.
+
+## Logs
+
+Every refresh is recorded: what ran, what came back, and whether it differed
+from last time. Kept always rather than switched on afterwards, because the
+symptom people notice — *"it says it updated seconds ago but the numbers are
+old"* — has several causes that look identical on screen, and by the time
+anyone looks, the refresh that went wrong is gone.
+
+| | |
+|---|---|
+| App | `~/Library/Logs/ClaudeUsage/ClaudeUsage.log` |
+| Widget | `~/Library/Containers/com.claudeusage.ClaudeUsage.Widget/Data/Library/Logs/ClaudeUsage/ClaudeUsageWidget.log` |
+| Harness | `~/Library/Logs/ClaudeUsage/claude-usage-cli.log` |
+
+Two files rather than one because a widget extension is always sandboxed and
+cannot write to `~/Library/Logs`; the same code resolves to its own container
+instead. Each rotates at 2 MB, keeping one `.log.1` behind it. **Settings →
+Log → Reveal** in the menu opens the app's in Finder, and shows the path.
+
+```bash
+./Tools/logs.sh           # follow both
+./Tools/logs.sh --paths   # just print where they are
+```
+
+Everything also goes to unified logging, so a refresh can be watched live with
+no file at all:
+
+```bash
+log stream --predicate 'subsystem == "com.claudeusage.ClaudeUsage"' --level info
+```
+
+After the fact, `log show` needs to be asked for those levels explicitly —
+`--info --debug` — because it does not persist them by default. The files do,
+which is why they exist.
+
+### Reading one
+
+```
+2026-09-06 15:53:19.554  app     INFO   app     refresh start (timer)
+2026-09-06 15:53:19.556  app     INFO   probe   running /Users/you/.local/bin/claude -p "/usage" in …, timeout 30s
+2026-09-06 15:53:21.140  app     INFO   probe   exit 0 in 1.6s, stdout 807B digest 3de77b77, stderr 0B
+2026-09-06 15:53:21.140  app     INFO   probe   parsed 2 gauge(s) in 1.6s: Session 33% resets Sep 6 at 8:40pm · Week 43% resets Sep 12 at 5pm
+2026-09-06 15:53:21.141  app     INFO   app     gauges changed after 0 unchanged refresh(es): Session 43%→33%, Week 44%→43%
+2026-09-06 15:53:21.142  app     INFO   store   wrote 253B to 2 location(s): …/snapshot.json, …/snapshot.json
+2026-09-06 15:53:21.142  app     INFO   app     refresh done (timer) in 1.6s, widget timelines reloaded
+```
+
+Columns are time, process (`app` or `widget`), level, category, message. A
+launch writes a banner first — version, where the snapshot is written and read
+back, which `claude` was resolved — so a log pasted into an issue stands on its
+own.
+
+The line that carries the most weight is `gauges changed` / `gauges unchanged
+for N refresh(es)`. A successful probe always stamps a fresh timestamp, so the
+panel reads "2s ago" whether the numbers moved or not; only that line separates
+a refresh that did something from one that merely happened.
+
+### What each symptom looks like here
+
+| In the log | What it means |
+|---|---|
+| No `refresh start` for minutes, then `timer fired 900s after the previous one` | The run loop was throttled or the machine slept. The panel keeps the last good numbers *and* the last good timestamp, so nothing on screen says a cycle was skipped. |
+| `refresh skipped, the previous one is still running` | A probe is hanging. At 60s with a 30s timeout it eats the following tick. |
+| `gauges unchanged for N refresh(es)` with a **changing** `digest` | The app is refreshing and the CLI is answering; `/usage` is reporting the same percentages. Nothing local to fix. |
+| `gauges unchanged` with the **same** `digest` every cycle | Byte-identical output. The report prints live request counts, so identical bytes mean a cached answer rather than a fresh one. |
+| `probe failed …; keeping the snapshot stored 12m ago` | The panel is showing old numbers deliberately; the failure is in the menu and behind the widget's warning badge too. |
+| `claude CLI not found` | Set the path in Settings. The line lists everywhere it looked. |
+| `nothing recognisable in … output` | The report format changed, or that is a login prompt. The full output follows on the same line. |
+| `could not write … to …` or `nowhere to write snapshot.json` | The app is fetching fine but the widget cannot see it: the menu will be current and the widget stale. |
+| `exists but will not decode` | A corrupt `snapshot.json`. It is skipped in favour of the next source, which is how a stale copy outlives a fresh one — delete it. |
+| Widget `read a snapshot generated 40m ago` while the app logged a refresh a minute back | WidgetKit rationed the reload. The app's side is healthy. |
+
+### Verbose
+
+**Settings → Log → Verbose** adds the raw CLI output and the per-path store
+decisions. It is off by default because that output is most of the volume. The
+widget is sandboxed and reads a different defaults domain, so the checkbox does
+not reach it — and neither does it reach a process you launch yourself:
+
+```bash
+CLAUDE_USAGE_LOG_LEVEL=debug /Applications/ClaudeUsage.app/Contents/MacOS/ClaudeUsage
+```
+
+`CLAUDE_USAGE_LOG=0` turns file logging off entirely. It is also off inside
+`swift test`, which has no business leaving files in `~/Library`, and
+`Tools/verify.sh` turns it all the way up, since being watched is what that
+harness is for.
 
 ## Setup
 
@@ -260,9 +351,11 @@ macOS runners bill at 10× minutes on private repos; free on public ones.
 | `Sources/ClaudeUsageCore/UsageProbe.swift` | Finds the CLI, runs it, prunes its transcripts. |
 | `Sources/ClaudeUsageCore/UsageOutputParser.swift` | Turns the printed report into gauges. |
 | `Sources/ClaudeUsageCore/SharedStore.swift` | Snapshot transport between app and widget. |
+| `Sources/ClaudeUsageCore/Log.swift` | The refresh record, to a file and to unified logging. |
 | `Sources/ClaudeUsageApp/` | Menu bar agent, refresh loop, settings. |
 | `Sources/ClaudeUsageWidget/` | Timeline provider and the small/medium/large views. |
 | `Tests/CoreTests/` | Parser, reset-line, formatting and snapshot tests. |
 | `Package.swift` | Test-only package, so `swift test` works without Xcode. |
 | `Tools/` | CLI harness, fixtures, installer, project generator. |
+| `Tools/logs.sh` | Follows the app's log and the widget's at once. |
 | `Tools/icon/` | The app icon and social card, drawn in CoreGraphics. |

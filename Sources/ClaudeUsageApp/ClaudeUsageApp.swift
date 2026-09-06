@@ -88,7 +88,7 @@ struct MenuContent: View {
 
     private var controls: some View {
         HStack {
-            Button("Refresh") { Task { await model.refresh() } }
+            Button("Refresh") { Task { await model.refresh(trigger: "refresh button") } }
             Button(showingSettings ? "Done" : "Settings") { showingSettings.toggle() }
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }
@@ -134,20 +134,44 @@ struct MenuContent: View {
                     .truncationMode(.head)
             }
 
+            Divider()
+            logging
+
             // Releases are tagged v1.0.<patch> and the bundle carries the
             // same string, so this says which release the copy came from.
-            Text("Version \(bundleVersion)")
+            Text("Version \(UsageModel.bundleVersion)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
 
-    private var bundleVersion: String {
-        let info = Bundle.main.infoDictionary
-        return Format.version(
-            short: info?["CFBundleShortVersionString"] as? String ?? "",
-            build: info?["CFBundleVersion"] as? String ?? ""
-        )
+    /// Where the record of every refresh is, and how loud it should be.
+    ///
+    /// Shown rather than only documented: the file is the answer to "it says it
+    /// updated but the numbers are old", and nobody reaches for a README at
+    /// that moment.
+    private var logging: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Log").font(.caption)
+                Spacer()
+                Button("Reveal") {
+                    NSWorkspace.shared.activateFileViewerSelecting([Log.fileURL])
+                }
+                .controlSize(.small)
+            }
+
+            Text(Log.fileURL.path)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .textSelection(.enabled)
+
+            Toggle("Verbose (records the raw CLI output)", isOn: $model.verboseLogging)
+                .font(.caption)
+                .toggleStyle(.checkbox)
+        }
     }
 }
 

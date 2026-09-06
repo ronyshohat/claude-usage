@@ -27,6 +27,12 @@ public enum Format {
         return duration(delta) + " ago"
     }
 
+    /// "2.1s" — how long something took, at the precision that tells a real
+    /// round trip apart from an answer that never left the machine.
+    public static func elapsed(_ interval: TimeInterval) -> String {
+        String(format: "%.1fs", max(0, interval))
+    }
+
     /// "1.0.42" from a release build, "1.0 (1)" from a local one.
     ///
     /// CI stamps the marketing version as `1.0.<patch>` and the build as the

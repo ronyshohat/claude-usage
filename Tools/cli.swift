@@ -7,6 +7,9 @@ import Foundation
 ///   Tools/verify.sh --parse FILE --now 2026-08-28T20:00:00Z
 ///                                      ...against a pinned clock
 ///
+/// Runs with verbose logging on — it exists to be watched — so the log it
+/// leaves behind holds the raw CLI output alongside the summary printed here.
+///
 /// `--now` only applies to `--parse`. A fixture carries dates but no year, so
 /// whether its reset reads as same-day or a year out depends on the day the
 /// harness runs; pinning the clock is what keeps CI's assertions stable.
@@ -15,6 +18,7 @@ import Foundation
 @main
 struct CLI {
     static func main() {
+        Log.setVerbose(true)
         var args = Array(CommandLine.arguments.dropFirst())
 
         var now = Date()
@@ -60,6 +64,7 @@ struct CLI {
                 at: UsageProbe.transcriptDirectory, includingPropertiesForKeys: nil
             ).filter { $0.pathExtension == "jsonl" }) ?? []
             print("leftover probe transcripts: \(leftovers.count)")
+            print("log: \(Log.locationSummary)")
 
         case let .failure(error):
             print("  failed: \(error.localizedDescription)")
