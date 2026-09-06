@@ -44,14 +44,31 @@ public enum UsageOutputParser {
                 resets = String(resets[resets.startIndex..<paren.lowerBound])
             }
 
+            let resetsAt = resets.isEmpty ? nil : parseReset(resets, now: now)
+            if !resets.isEmpty, resetsAt == nil {
+                // The gauge still displays — the raw text is what gets shown —
+                // but the countdown will be missing, and this is the line that
+                // says why rather than leaving it to look like a layout bug.
+                Log.warn("parse", "no date could be read out of reset text \"\(resets)\""
+                    + " for \(label.lowercased()); its countdown will be missing")
+            }
+
             return LimitGauge(
                 label: label.lowercased(),
                 percent: percent,
                 resetsText: resets,
-                resetsAt: resets.isEmpty ? nil : parseReset(resets, now: now)
+                resetsAt: resetsAt
             )
         }
-        return addingImplicitZeros(parsed)
+
+        let gauges = addingImplicitZeros(parsed)
+        if parsed.isEmpty {
+            Log.debug("parse", "no line matched in \(output.count) characters of output")
+        } else if gauges.count != parsed.count {
+            Log.info("parse", "the output named \(parsed.count) limit(s);"
+                + " read the missing \(gauges.count - parsed.count) as a real zero")
+        }
+        return gauges
     }
 
     // MARK: - Missing limits

@@ -116,24 +116,70 @@ public enum SharedStore {
 
     private static func writeAll(_ data: Data, named name: String) throws {
         let destinations = writeDestinations()
-        guard !destinations.isEmpty else { throw StoreError.noWritableLocation }
-        var wrote = false
+        guard !destinations.isEmpty else {
+            let root = containerRoot(for: widgetBundleID)
+            Log.error("store", "nowhere to write \(name). appGroup=\(appGroupID ?? "off"),"
+                + " widget container \(root.path)"
+                + " exists=\(FileManager.default.fileExists(atPath: root.path))."
+                + " The widget will keep showing whatever it last read")
+            throw StoreError.noWritableLocation
+        }
+
+        var wrote: [String] = []
+        var failed: [String] = []
         for directory in destinations {
-            // Atomic so the widget never reads a half-written file.
-            if (try? data.write(to: directory.appendingPathComponent(name), options: .atomic)) != nil {
-                wrote = true
+            let url = directory.appendingPathComponent(name)
+            do {
+                // Atomic so the widget never reads a half-written file.
+                try data.write(to: url, options: .atomic)
+                wrote.append(url.path)
+            } catch {
+                failed.append("\(url.path) (\(error.localizedDescription))")
             }
         }
-        guard wrote else { throw StoreError.noWritableLocation }
+
+        // A partial write is the shape of "the menu is right and the widget is
+        // stale", so name the destination that refused rather than only the
+        // ones that worked.
+        if !failed.isEmpty {
+            Log.error("store", "could not write \(name) to \(failed.joined(separator: "; "))")
+        }
+        guard !wrote.isEmpty else { throw StoreError.noWritableLocation }
+        Log.info("store", "wrote \(data.count)B to \(wrote.count) location(s):"
+            + " \(wrote.joined(separator: ", "))")
     }
 
     private static func readFirst<T: Decodable>(_ type: T.Type, named name: String) -> T? {
-        for directory in readSources() {
-            guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)),
-                  let value = try? decoder.decode(type, from: data)
-            else { continue }
-            return value
+        let sources = readSources()
+        guard !sources.isEmpty else {
+            Log.warn("store", "no readable location for \(name) at all")
+            return nil
         }
+
+        for directory in sources {
+            let url = directory.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: url) else {
+                Log.debug("store", "no \(name) at \(url.path)")
+                continue
+            }
+            do {
+                let value = try decoder.decode(type, from: data)
+                let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate
+                Log.debug("store", "read \(data.count)B from \(url.path),"
+                    + " written \(modified.map { Format.relative($0) } ?? "at an unknown time")")
+                return value
+            } catch {
+                // A file that will not decode is skipped in favour of the next
+                // source, which is exactly how a stale copy outlives a fresh
+                // one. Never silently.
+                Log.error("store", "\(url.path) exists but will not decode:"
+                    + " \(error.localizedDescription). Delete it if this persists")
+            }
+        }
+
+        Log.debug("store", "nothing readable named \(name) in"
+            + " \(sources.map(\.path).joined(separator: ", "))")
         return nil
     }
 
@@ -151,5 +197,13 @@ public enum SharedStore {
     public static func destinationSummary() -> String {
         let paths = writeDestinations().map { $0.path }
         return paths.isEmpty ? "none" : paths.joined(separator: "\n")
+    }
+
+    /// Where this process would read from, for the launch banner. The app and
+    /// the widget resolve `localSupport()` to different directories, so a log
+    /// that does not say which is missing the fact that matters most.
+    public static func sourceSummary() -> String {
+        let paths = readSources().map { $0.path }
+        return paths.isEmpty ? "none" : paths.joined(separator: ", ")
     }
 }

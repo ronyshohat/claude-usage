@@ -47,6 +47,13 @@ struct FormatTests {
         #expect(LimitGauge(label: "session", percent: 0, resetsText: "").shortLabel == "Session")
     }
 
+    @Test("Elapsed time keeps the tenth that tells a round trip from a cached answer")
+    func elapsedKeepsOneDecimal() {
+        #expect(Format.elapsed(2.14) == "2.1s")
+        #expect(Format.elapsed(0) == "0.0s")
+        #expect(Format.elapsed(-3) == "0.0s")
+    }
+
     @Test("A release version already carries its build, so it is not repeated")
     func versionDropsARedundantBuild() {
         #expect(Format.version(short: "1.0.42", build: "42") == "1.0.42")

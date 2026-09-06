@@ -103,6 +103,43 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
         gauges.first { $0.label.hasPrefix("week") }
     }
 
+    /// "Session 48% resets Aug 28 at 9:20pm · Week 27% no reset"
+    public var logSummary: String { gauges.logSummary }
+
+    /// What actually moved between two probes.
+    ///
+    /// The panel shows a fresh timestamp whether or not the numbers behind it
+    /// changed, so this is the difference between a refresh that did something
+    /// and one that only looked like it did.
+    public func changes(since previous: UsageSnapshot) -> String {
+        var parts: [String] = []
+
+        for gauge in gauges {
+            guard let was = previous.gauges.first(where: { $0.label == gauge.label }) else {
+                parts.append("\(gauge.shortLabel) \(gauge.percent)% (new)")
+                continue
+            }
+            if was.percent != gauge.percent {
+                parts.append("\(gauge.shortLabel) \(was.percent)%→\(gauge.percent)%")
+            } else if was.resetsText != gauge.resetsText {
+                // A reset that rolls while the percentage holds is a new window
+                // opening, which is a real change however static the number is.
+                parts.append(
+                    "\(gauge.shortLabel) \(gauge.percent)% resets"
+                        + " \"\(was.resetsText)\"→\"\(gauge.resetsText)\""
+                )
+            } else {
+                parts.append("\(gauge.shortLabel) \(gauge.percent)% same")
+            }
+        }
+
+        for gone in previous.gauges where !gauges.contains(where: { $0.label == gone.label }) {
+            parts.append("\(gone.shortLabel) gone")
+        }
+
+        return parts.isEmpty ? "no gauges" : parts.joined(separator: ", ")
+    }
+
     public static let placeholder = UsageSnapshot(
         gauges: [
             LimitGauge(
@@ -119,4 +156,14 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
             ),
         ]
     )
+}
+
+public extension Array where Element == LimitGauge {
+    /// One line naming every gauge, its percentage and its reset, for the log.
+    var logSummary: String {
+        guard !isEmpty else { return "no gauges" }
+        return map {
+            "\($0.shortLabel) \($0.percent)% \($0.hasReset ? "resets \($0.resetsText)" : "no reset")"
+        }.joined(separator: " · ")
+    }
 }
